@@ -1,0 +1,11 @@
+tasks:
+  - name: Open README 
+    command: gp open README.md
+
+ports:
+  - port: 5173
+    visibility: public
+
+vscode:
+  extensions:
+    - Vue.volar
