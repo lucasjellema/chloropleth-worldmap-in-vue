@@ -1,5 +1,8 @@
 <template>
   <div id="mapcontainer"></div>
+  <div id="country-details" class="hidden">
+    <!-- Country details will be displayed here -->
+  </div>
 </template>
   
 <script>
@@ -8,6 +11,25 @@ import * as topojson from 'topojson';
 
 const geoJsonUrl = 'countries.geojson';
 let svg, g, countryDataSet;
+
+const countryDetailsBox = document.getElementById("country-details");
+
+function showCountryDetails(details) {
+  // Display the country details box and populate it with details
+  countryDetailsBox.style.display = "block";
+  countryDetailsBox.innerHTML = `
+        <h2>${details.name}</h2>
+        <p>Population: ${details.population}</p>
+        <p>Capital: ${details.capital}</p>
+        <!-- Add more details as needed -->
+    `;
+}
+
+function hideCountryDetails() {
+  // Hide the country details box
+  countryDetailsBox.style.display = "none";
+}
+
 
 export default {
   name: 'WorldMap',
@@ -23,8 +45,10 @@ export default {
       .attr('preserveAspectRatio', 'xMinYMin');
 
 
-    const projection = d3.geoNaturalEarth1().translate([t0.x, t0.y]).scale(t0.k);;
+
+    const projection = d3.geoNaturalEarth1().translate([t0.x, t0.y]).scale(t0.k);
     const pathGenerator = d3.geoPath().projection(projection);
+    let zoooom;
 
     g = svg.append('g');
 
@@ -32,16 +56,43 @@ export default {
       .append('g')
       .attr('transform', `translate(40,310)`);
 
+
+    // show a box with country details  
+    const countryLegendG = svg
+      .append('g')
+      .attr('transform', `translate(1150,610)`);
+
+    const countryDetailsBackgroundRect = countryLegendG.selectAll('rect').data([null]);
+
+    countryDetailsBackgroundRect
+      .enter()
+      .append('rect')
+      .merge(countryDetailsBackgroundRect)
+      .attr('x', -20 * 2)
+      .attr('y', -20 * 2)
+      .attr('rx', 20 * 2)
+      .attr('width', 400)
+      .attr('fill', '#eeffff')
+      .attr('height', 160)
+      .attr("display", "none")
+      .attr("id", "my-rectangle")
+      ;
+
+    countryDetailsBackgroundRect
+      .append('text')
+      .merge(countryDetailsBackgroundRect.select('text'))
+      .text("(d) => d")
+      .attr('dy', '0.32em')
+      .attr('x', 10)
+
+
+
+
     g.append('path')
       .attr('class', 'sphere')
       .attr('d', pathGenerator({ type: 'Sphere' }));
 
-    /*      svg.call(
-      d3.zoom().on('zoom', () => {
-        g.attr('transform', d3.event.transform);
-      })
-    );
-*/
+
     const colorScale = d3.scaleOrdinal();
     //      const colorValue = (d) => d.properties.economy;
     //      const colorValue = (d) => d.properties.continent ;
@@ -126,6 +177,8 @@ export default {
         .on('click', programmaticallyAddCountry);
     };
 
+
+
     loadAndProcessData().then((countries) => {
       countryDataSet = countries;
 
@@ -161,37 +214,78 @@ export default {
         .text((d) => d.properties.name + ' : ' + colorValue(d))
         .attr('class', 'country');
 
-      // Let the zoom take care of modifying the projection:
-      // thanks to https://stackoverflow.com/questions/62228556/reactjs-d3-how-to-zoom-in-d3-geo-world-map
-      let zoom = d3.zoom()
-        .on("zoom", function () {
-          g.attr("transform", d3.zoomTransform(this))
-          countryNodes.style("stroke-width", 1 / d3.zoomTransform(this).k); // update stroke width.
-        })
+      zoooom = d3.zoom()
+        .scaleExtent([1, 5]) // Set the zoom extent
+        .on("zoom", zoomed);
 
-      svg.call(zoom);
+      // Attach the zoom behavior to the SVG
+      svg.call(zoooom);
+
+      // // Let the zoom take care of modifying the projection:
+      // // thanks to https://stackoverflow.com/questions/62228556/reactjs-d3-how-to-zoom-in-d3-geo-world-map
+      // zoom = d3.zoom()
+      //   .on("zoom", function () {
+      //     g.attr("transform", d3.zoomTransform(this))
+      //     countryNodes.style("stroke-width", 1 / d3.zoomTransform(this).k); // update stroke width.
+      //   })
+
+      // svg.call(zoom);
 
       function handleCountryClick(event, d) {
         const countryPath = d3.select(this);
         toggleCountrySelection(event, d, countryPath)
 
 
-        let zoomFactor = 3.5
-        // this makes the country fit in a box defined by width / zoomfactor. increase zoomfactor, box becomes smaller and scalefacor is smaller
-        // for small countries, the zoomfactor really should be much larger - otherwise too much zooming in
-        // note: when multiple countries are selected, the last one selected determines focus and zoom
-        projection.fitSize([width/zoomFactor, height/zoomFactor], d);
-        let k = projection.scale() / t0.k; // relative to initial scale.
-        
-
-        let x = projection.translate()[0] - t0.x * k + 400; // relative to initial scale.
-        let y = projection.translate()[1] - t0.y * k + 300; // relative to initial scale.
-        console.log(`scale ${k}`)
-        svg.call(zoom.transform, d3.zoomIdentity.translate(x, y).scale(k));
+        //zoomInOnCountry(d);
+        zoomToCountry(event, d)
       }
+
+
+    }
+
+    // Function to handle zooming
+    function zoomed(event) {
+      svg.selectAll("path")
+        .attr("transform", event.transform); // Apply the zoom transform to map elements
+    }
+    // Function to zoom to a specific country
+    function zoomToCountry(event, d) {
+      // Calculate the bounding box of the selected feature
+      const bounds = pathGenerator.bounds(d);
+      const dx = bounds[1][0] - bounds[0][0];
+      const dy = bounds[1][1] - bounds[0][1];
+      const x = (bounds[0][0] + bounds[1][0]) / 2;
+      const y = (bounds[0][1] + bounds[1][1]) / 2;
+      const scale = Math.max(1, Math.min(3, 0.9 / Math.max(dx / width, dy / height)));
+
+      // Transition to the selected feature's position and scale
+      svg.transition()
+        .duration(750)
+        .call(zoooom.transform, d3.zoomIdentity
+          .translate(width / 2, height / 2)
+          .scale(scale)
+          .translate(-x, -y)
+        );
+    }
+
+    function zoomToScale(scale) {
+      svg.transition()
+        .duration(750)
+        .call(zoooom.transform, d3.zoomIdentity.translate(0, 0).scale(scale));
     }
 
 
+    // function zoomInOnCountry(d) {
+    //   let zoomFactor = 3;
+    //   // this makes the country fit in a box defined by width / zoomfactor. increase zoomfactor, box becomes smaller and scalefacor is smaller
+    //   // for small countries, the zoomfactor really should be much larger - otherwise too much zooming in
+    //   // note: when multiple countries are selected, the last one selected determines focus and zoom
+    //   fakeProjection.fitSize([width / zoomFactor, height / zoomFactor], d);
+    //   let k = fakeProjection.scale() / t0.k; // relative to initial scale.
+    //   let x = fakeProjection.translate()[0] - t0.x * k + 400; // relative to initial scale.
+    //   let y = fakeProjection.translate()[1] - t0.y * k + 300; // relative to initial scale.
+    //   svg.call(zoom.transform, d3.zoomIdentity.translate(x, y).scale(k));
+    // }
 
 
     function getCountryNodes() {
@@ -222,6 +316,46 @@ export default {
       // Remove the hover effect on mouse leave
       d3.select(this).classed('hover-country', false);
     }
+
+    function showCountryDetails(d) {
+      // show the country details legend
+      const myRectangle = d3.select("#my-rectangle");
+      myRectangle.attr("display", "block");
+
+      // Create a group element to hold the text elements
+      const textGroup = myRectangle.append("g")
+        .attr("id", "text-group");
+
+      // Define the country details
+      const countryDetails = {
+        name: "Country Name",
+        population: "Population",
+        capital: "Capital City",
+        // Add more details as needed
+      };
+
+      // Create and position text elements for the country details
+      let yOffset = 80; // Adjust the starting y-position as needed
+      for (const key in countryDetails) {
+        if (Object.hasOwnProperty.call(countryDetails, key)) {
+          textGroup.append("text")
+            .attr("x", 60) // Adjust the x-position as needed
+            .attr("y", yOffset)
+            .text(`${key}: ${countryDetails[key]}`)
+            .attr("font-size", "14px") // Adjust the font size as needed
+            .attr("fill", "black"); // Adjust the text color as needed
+          yOffset += 20; // Increase the y-position for the next line
+        }
+      }
+    }
+
+    function hideCountryDetails() {
+      // show the country details legend
+      const myRectangle = d3.select("#my-rectangle");
+      myRectangle.attr("display", "none");
+
+    }
+
     // Function to toggle country selection
     function toggleCountrySelection(event, d, countryPath) {
       //   const countryPath = d3.select(this);
@@ -229,6 +363,9 @@ export default {
 
       // Check if Ctrl key is pressed
       console.log(JSON.stringify(event));
+      showCountryDetails(d)
+
+
       if (event.ctrlKey) {
         // Toggle selection state
         const isSelected = selectedCountries.includes(countryCode);
@@ -236,6 +373,7 @@ export default {
           // Deselect the country
           selectedCountries.splice(selectedCountries.indexOf(countryCode), 1);
           countryPath.classed('selected-country', false);
+
         } else {
           // Select the country
           selectedCountries.push(countryCode);
@@ -245,10 +383,13 @@ export default {
         // If Ctrl is not pressed, clear previous selections
         unmarkAllSelectedCountries();
         selectedCountries.length = 0;
-
         // Select the clicked country
         selectedCountries.push(countryCode);
         countryPath.classed('selected-country', true);
+      }
+      if (selectedCountries.length == 0) {
+        zoomToScale(1)
+        hideCountryDetails()
       }
     }
 
@@ -313,6 +454,23 @@ rect {
 
 p {
   padding-left: 10px;
+}
+
+/* CSS styles for hiding the country details box by default */
+.hidden {
+  display: none;
+  /* Add any other styling you need */
+}
+
+/* CSS styles for positioning the box at the lower-right corner */
+#country-details {
+  position: fixed;
+  bottom: 10px;
+  right: 10px;
+  background-color: white;
+  border: 1px solid #ccc;
+  padding: 10px;
+  /* Add any other styling you need */
 }
 </style>
   
